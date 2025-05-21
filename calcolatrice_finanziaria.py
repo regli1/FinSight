@@ -6,6 +6,21 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="📈 Dashboard Finanziaria Avanzata", layout="wide")
 
+st.markdown("""
+    <style>
+        .metric-label { font-weight: bold; color: #333; }
+        .stPlotlyChart { padding: 0.5rem; }
+    </style>
+""", unsafe_allow_html=True)
+
+# Aggiunta logo e titolo personalizzato
+col_logo, col_titolo = st.columns([1, 5])
+with col_logo:
+    st.image("logo.png", width=60)
+with col_titolo:
+    st.markdown("<h1 style='margin-bottom: 0;'>FinSight – Dashboard Finanziaria</h1><h5 style='color: gray;'>Analisi interattiva di aziende quotate</h5>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True)
+
 aziende = {
     "Apple": "AAPL",
     "Microsoft": "MSFT",
