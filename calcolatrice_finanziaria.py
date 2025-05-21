@@ -1,24 +1,10 @@
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="📈 Dashboard Finanziaria Avanzata", layout="wide")
-
-st.markdown("""
-    <style>
-        .metric-label { font-weight: bold; color: #333; }
-        .stPlotlyChart { padding: 0.5rem; }
-    </style>
-""", unsafe_allow_html=True)
-
-# Aggiunta logo e titolo personalizzato
-col_logo, col_titolo = st.columns([1, 5])
-with col_logo:
-    st.image("logo.png", width=60)
-with col_titolo:
-    st.markdown("<h1 style='margin-bottom: 0;'>FinSight – Dashboard Finanziaria</h1><h5 style='color: gray;'>Analisi interattiva di aziende quotate</h5>", unsafe_allow_html=True)
-st.markdown("<hr>", unsafe_allow_html=True)
 
 aziende = {
     "Apple": "AAPL",
@@ -34,7 +20,6 @@ aziende = {
 }
 
 scelte = st.sidebar.multiselect("Seleziona fino a 3 aziende:", options=list(aziende.keys()), max_selections=3)
-
 anni = st.sidebar.selectbox("Intervallo di tempo storico:", ["1y", "2y", "5y"], index=0)
 
 @st.cache_data
@@ -92,13 +77,22 @@ def calcola_indicatori(ticker, periodo):
 if scelte:
     dati = {nome: calcola_indicatori(aziende[nome], anni) for nome in scelte if calcola_indicatori(aziende[nome], anni)}
 
-    # Grafico prezzi combinato
     st.subheader("📈 Andamento Prezzo delle Aziende Selezionate")
     fig_comb = go.Figure()
     for nome, d in dati.items():
         fig_comb.add_trace(go.Scatter(x=d['Istorico'].index, y=d['Istorico']['Close'], name=nome))
-    fig_comb.update_layout(title="Prezzo Azioni Storico", xaxis_title="Data", yaxis_title="Prezzo ($)", xaxis_tickformat="%b %Y", height=400)
+    fig_comb.update_layout(title="Prezzo Azioni Storico", xaxis_title="Data", yaxis_title="Prezzo ($)", height=400)
     st.plotly_chart(fig_comb, use_container_width=True)
+
+    # Benchmarking with S&P 500
+    benchmark = yf.Ticker("^GSPC").history(period=anni)
+    st.subheader("📉 Confronto con S&P 500")
+    fig_bench = go.Figure()
+    for nome, d in dati.items():
+        fig_bench.add_trace(go.Scatter(x=d['Istorico'].index, y=d['Istorico']['Close'], name=nome))
+    fig_bench.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Close"], name="S&P 500", line=dict(dash='dash')))
+    fig_bench.update_layout(title="Prezzo Azioni vs S&P 500", xaxis_title="Data", yaxis_title="Prezzo ($)")
+    st.plotly_chart(fig_bench, use_container_width=True)
 
     tabs = st.tabs(list(dati.keys()))
     for i, nome in enumerate(dati.keys()):
@@ -113,6 +107,10 @@ if scelte:
             st.markdown(f"**Settore:** {d['Info'].get('sector', 'N/D')}")
             st.markdown(f"**Descrizione:** {d['Info'].get('longBusinessSummary', '')[:300]}...")
 
+        # Additional indicators
+        d['Dividend Yield'] = d['Info'].get("dividendYield", None)
+        d['Price/Book'] = d['Info'].get("priceToBook", None)
+
     if len(dati) > 1:
         st.subheader("📊 Confronto Indicatori")
         confronto = pd.DataFrame({nome: {
@@ -121,7 +119,8 @@ if scelte:
             "Debt/Equity": dati[nome]['Debt/Equity'] or 0,
             "Current Ratio": dati[nome]['Current Ratio'] or 0,
             "P/E Ratio": dati[nome]['P/E Ratio'] or 0,
-            "Market Cap": dati[nome]['Market Cap'] or 0
+            "Market Cap": dati[nome]['Market Cap'] or 0,
+            "Price/Book": dati[nome].get('Price/Book', 0) or 0
         } for nome in dati}).T
 
         st.dataframe(confronto.style.format("{:.2f}"))
@@ -132,17 +131,13 @@ if scelte:
             "Debt/Equity": "#2ca02c",
             "Current Ratio": "#d62728",
             "P/E Ratio": "#9467bd",
-            "Market Cap": "#8c564b"
+            "Market Cap": "#8c564b",
+            "Price/Book": "#bcbd22"
         }
 
         for metrica in confronto.columns:
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=confronto.index,
-                y=confronto[metrica],
-                name=metrica,
-                marker_color=colori.get(metrica, None)
-            ))
+            fig.add_trace(go.Bar(x=confronto.index, y=confronto[metrica], name=metrica, marker_color=colori.get(metrica, None)))
             fig.update_layout(title=f"Confronto: {metrica}", xaxis_title="Azienda", yaxis_title=metrica, height=300)
             st.plotly_chart(fig, use_container_width=True)
 else:
