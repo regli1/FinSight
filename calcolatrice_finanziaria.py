@@ -1,8 +1,8 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
 st.set_page_config(page_title="📈 Dashboard Finanziaria Avanzata", layout="wide")
 
@@ -89,6 +89,11 @@ def calcola_indicatori(ticker, periodo):
         "Info": info,
     }
 
+def rendimento_cumulato(df_close):
+    returns = df_close.pct_change().fillna(0)
+    cum_returns = (1 + returns).cumprod() * 100
+    return cum_returns
+
 if scelte:
     dati = {nome: calcola_indicatori(aziende[nome], anni) for nome in scelte if calcola_indicatori(aziende[nome], anni)}
 
@@ -99,16 +104,29 @@ if scelte:
     fig_comb.update_layout(title="Prezzo Azioni Storico", xaxis_title="Data", yaxis_title="Prezzo ($)", height=400)
     st.plotly_chart(fig_comb, use_container_width=True)
 
-    # Benchmarking with S&P 500
+    # confronto con rendimento cumulato base 100 ---
     benchmark = yf.Ticker("^GSPC").history(period=anni)
-    st.subheader("📉 Confronto con S&P 500")
-    fig_bench = go.Figure()
-    for nome, d in dati.items():
-        fig_bench.add_trace(go.Scatter(x=d['Istorico'].index, y=d['Istorico']['Close'], name=nome))
-    fig_bench.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Close"], name="S&P 500", line=dict(dash='dash')))
-    fig_bench.update_layout(title="Prezzo Azioni vs S&P 500", xaxis_title="Data", yaxis_title="Prezzo ($)")
-    st.plotly_chart(fig_bench, use_container_width=True)
+    prezzi_df = pd.DataFrame({nome: d['Istorico']['Close'] for nome, d in dati.items()}).dropna()
+    benchmark_df = benchmark['Close'].dropna()
 
+    df_tutti = prezzi_df.copy()
+    df_tutti['S&P 500'] = benchmark_df
+
+    cum_returns = rendimento_cumulato(df_tutti)
+
+    fig_cum = go.Figure()
+    for col in cum_returns.columns:
+        fig_cum.add_trace(go.Scatter(x=cum_returns.index, y=cum_returns[col], name=col))
+    fig_cum.update_layout(
+        title="Rendimento Cumulato Normalizzato (Base 100)",
+        xaxis_title="Data",
+        yaxis_title="Indice Rendimento",
+        height=450
+    )
+    st.subheader("📊 Confronto Rendimento Cumulato")
+    st.plotly_chart(fig_cum, use_container_width=True)
+
+    # tabs, metriche, ecc...
     tabs = st.tabs(list(dati.keys()))
     for i, nome in enumerate(dati.keys()):
         d = dati[nome]
@@ -149,11 +167,57 @@ if scelte:
             "Market Cap": "#8c564b",
             "Price/Book": "#bcbd22"
         }
-
         for metrica in confronto.columns:
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=confronto.index, y=confronto[metrica], name=metrica, marker_color=colori.get(metrica, None)))
+            fig.add_trace(go.Bar(
+                x=confronto.index,
+                y=confronto[metrica],
+                name=metrica,
+                marker_color=colori.get(metrica, None)
+            ))
             fig.update_layout(title=f"Confronto: {metrica}", xaxis_title="Azienda", yaxis_title=metrica, height=300)
             st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("Seleziona almeno un'azienda per iniziare l'analisi.")
+
+    # Analisi statistica
+    st.subheader("📊 Analisi Statistica dei Log Returns")
+
+    prezzi = {nome: d['Istorico']['Close'] for nome, d in dati.items()}
+    prezzi_df = pd.DataFrame(prezzi).dropna()
+
+    benchmark_df = benchmark['Close'].dropna()
+    prezzi_df['S&P 500'] = benchmark_df
+    prezzi_returns = np.log(prezzi_df / prezzi_df.shift(1)).dropna()
+
+    st.markdown("### Statistiche descrittive (log returns)")
+    stats = prezzi_returns.describe().T[['mean', 'std', 'min', 'max']]
+    stats.rename(columns={
+            'mean': 'Media',
+            'std': 'Deviazione Std',
+            'min': 'Min',
+            'max': 'Max'
+        }, inplace=True)
+    st.dataframe(stats.style.format("{:.4f}"))
+
+    st.markdown("### Correlazione tra gli asset (log returns)")
+    correlazione = prezzi_returns.corr()
+    st.dataframe(correlazione.style.background_gradient(cmap='coolwarm').format("{:.2f}"))
+
+    st.markdown("### 📈 Log Returns nel Tempo")
+    fig_returns = go.Figure()
+    for col in prezzi_returns.columns:
+            fig_returns.add_trace(go.Scatter(x=prezzi_returns.index, y=prezzi_returns[col], name=col))
+    fig_returns.update_layout(title="Andamento Log Returns", xaxis_title="Data", yaxis_title="Log Return")
+    st.plotly_chart(fig_returns, use_container_width=True)
+
+    st.markdown("### 🔥 Heatmap di Correlazione")
+    fig_corr = go.Figure(data=go.Heatmap(
+            z=correlazione.values,
+            x=correlazione.columns,
+            y=correlazione.index,
+            colorscale='RdBu',
+            zmin=-1,
+            zmax=1,
+            colorbar=dict(title="Correlazione")
+        ))
+    fig_corr.update_layout(title="Heatmap Correlazione Log Returns")
+    st.plotly_chart(fig_corr, use_container_width=True)
